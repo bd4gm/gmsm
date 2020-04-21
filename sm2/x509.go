@@ -995,6 +995,11 @@ func checkSignature(algo SignatureAlgorithm, signed, signature []byte, publicKey
 		h.Write(signed)
 		return h.Sum(nil)
 	}
+
+	h := hashType.New()
+	h.Write(signed)
+	digest := h.Sum(nil)
+
 	switch pub := publicKey.(type) {
 	case *rsa.PublicKey:
 		if algo.isRSAPSS() {
@@ -1033,7 +1038,7 @@ func checkSignature(algo SignatureAlgorithm, signed, signature []byte, publicKey
 				X:     pub.X,
 				Y:     pub.Y,
 			}
-			if !Sm2Verify(sm2pub, signed, nil, ecdsaSig.R, ecdsaSig.S) {
+			if !Sm2Verify(sm2pub, digest, nil, ecdsaSig.R, ecdsaSig.S) {
 				return errors.New("x509: SM2 verification failure")
 			}
 		default:
@@ -1957,15 +1962,9 @@ func CreateCertificate(rand io.Reader, template, parent *Certificate, pub, priv 
 
 	c.Raw = tbsCertContents
 
-	digest := tbsCertContents
-	switch template.SignatureAlgorithm {
-	case SM2WithSM3, SM2WithSHA1, SM2WithSHA256:
-		break
-	default:
-		h := hashFunc.New()
-		h.Write(tbsCertContents)
-		digest = h.Sum(nil)
-	}
+	h := hashFunc.New()
+	h.Write(tbsCertContents)
+	digest := h.Sum(nil)
 
 	var signerOpts crypto.SignerOpts
 	signerOpts = hashFunc
