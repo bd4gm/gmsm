@@ -990,11 +990,6 @@ func checkSignature(algo SignatureAlgorithm, signed, signature []byte, publicKey
 	if !hashType.Available() {
 		return ErrUnsupportedAlgorithm
 	}
-	fnHash := func() []byte {
-		h := hashType.New()
-		h.Write(signed)
-		return h.Sum(nil)
-	}
 
 	h := hashType.New()
 	h.Write(signed)
@@ -1003,9 +998,9 @@ func checkSignature(algo SignatureAlgorithm, signed, signature []byte, publicKey
 	switch pub := publicKey.(type) {
 	case *rsa.PublicKey:
 		if algo.isRSAPSS() {
-			return rsa.VerifyPSS(pub, crypto.Hash(hashType), fnHash(), signature, &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash})
+			return rsa.VerifyPSS(pub, crypto.Hash(hashType), digest, signature, &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash})
 		} else {
-			return rsa.VerifyPKCS1v15(pub, crypto.Hash(hashType), fnHash(), signature)
+			return rsa.VerifyPKCS1v15(pub, crypto.Hash(hashType), digest, signature)
 		}
 	case *dsa.PublicKey:
 		dsaSig := new(dsaSignature)
@@ -1017,7 +1012,7 @@ func checkSignature(algo SignatureAlgorithm, signed, signature []byte, publicKey
 		if dsaSig.R.Sign() <= 0 || dsaSig.S.Sign() <= 0 {
 			return errors.New("x509: DSA signature contained zero or negative values")
 		}
-		if !dsa.Verify(pub, fnHash(), dsaSig.R, dsaSig.S) {
+		if !dsa.Verify(pub, digest, dsaSig.R, dsaSig.S) {
 			return errors.New("x509: DSA verification failure")
 		}
 		return
@@ -1042,7 +1037,7 @@ func checkSignature(algo SignatureAlgorithm, signed, signature []byte, publicKey
 				return errors.New("x509: SM2 verification failure")
 			}
 		default:
-			if !ecdsa.Verify(pub, fnHash(), ecdsaSig.R, ecdsaSig.S) {
+			if !ecdsa.Verify(pub, digest, ecdsaSig.R, ecdsaSig.S) {
 				return errors.New("x509: ECDSA verification failure")
 			}
 		}
@@ -2065,15 +2060,9 @@ func (c *Certificate) CreateCRL(rand io.Reader, priv interface{}, revokedCerts [
 		return
 	}
 
-	digest := tbsCertListContents
-	switch hashFunc {
-	case SM3:
-		break
-	default:
-		h := hashFunc.New()
-		h.Write(tbsCertListContents)
-		digest = h.Sum(nil)
-	}
+	h := hashFunc.New()
+	h.Write(tbsCertListContents)
+	digest := h.Sum(nil)
 
 	var signature []byte
 	signature, err = key.Sign(rand, digest, hashFunc)
@@ -2350,15 +2339,9 @@ func CreateCertificateRequest(rand io.Reader, template *CertificateRequest, priv
 	}
 	tbsCSR.Raw = tbsCSRContents
 
-	digest := tbsCSRContents
-	switch template.SignatureAlgorithm {
-	case SM2WithSM3, SM2WithSHA1, SM2WithSHA256:
-		break
-	default:
-		h := hashFunc.New()
-		h.Write(tbsCSRContents)
-		digest = h.Sum(nil)
-	}
+	h := hashFunc.New()
+	h.Write(tbsCSRContents)
+	digest := h.Sum(nil)
 
 	var signature []byte
 	signature, err = key.Sign(rand, digest, hashFunc)
